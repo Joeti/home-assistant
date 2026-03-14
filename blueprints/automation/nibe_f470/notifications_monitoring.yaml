@@ -2,8 +2,8 @@ blueprint:
   name: "Nibe F470 - Notifications & Monitoring"
   description: >
     Monitors your Nibe F470 heat pump and sends notifications for important events:
-    alarm states, compressor issues, abnormal temperatures, and high energy consumption.
-    Supports any notification service (mobile app, email, etc.).
+    alarm states, compressor issues, abnormal temperatures, high energy consumption,
+    and fan mode changes. Supports any notification service (mobile app, email, etc.).
   domain: automation
   input:
     notify_service:
@@ -106,6 +106,17 @@ blueprint:
           max: 25
           step: 1
           unit_of_measurement: "°C"
+    fan_mode_sensor:
+      name: Fan mode sensor (optional)
+      description: >
+        The myUplink sensor for current fan mode (read-only numeric value).
+        You will be notified when the fan mode changes.
+      default: {}
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+              domain: sensor
     notification_cooldown:
       name: Notification cooldown (minutes)
       description: "Minimum time between repeated notifications of the same type"
@@ -146,6 +157,10 @@ trigger:
     for:
       minutes: 15
     id: high_power
+  # Fan mode changed
+  - platform: state
+    entity_id: !input fan_mode_sensor
+    id: fan_mode_changed
   # Periodic check for supply/return diff
   - platform: time_pattern
     minutes: "/15"
@@ -156,6 +171,7 @@ variables:
   supply_sensor: !input supply_temp_sensor
   return_sensor: !input return_temp_sensor
   outdoor_sensor: !input outdoor_temp_sensor
+  fan_sensor: !input fan_mode_sensor
   diff_threshold: !input supply_return_diff_threshold
   supply_temp: >-
     {% if supply_sensor is string and supply_sensor != '' %}
@@ -237,6 +253,20 @@ action:
                 Heat pump power consumption has been above
                 {{ states(trigger.entity_id) }}W for 15+ minutes.
                 Check if auxiliary/backup heater is running.
+
+      # Fan mode changed
+      - conditions:
+          - condition: trigger
+            id: fan_mode_changed
+          - condition: template
+            value_template: "{{ fan_sensor is string and fan_sensor != '' }}"
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Nibe F470 - Fan Mode Changed"
+              message: >-
+                Fan mode changed from {{ trigger.from_state.state }} to
+                {{ trigger.to_state.state }}.
 
       # Periodic check: supply/return temperature difference
       - conditions:
