@@ -9,9 +9,11 @@ blueprint:
   input:
     notify_service:
       name: Notification service
-      description: "The notification service to use (e.g., notify.mobile_app_your_phone)"
+      description: "Select the notify entity for your device (e.g., mobile app)"
       selector:
-        text:
+        entity:
+          filter:
+            - domain: notify
     water_leak_sensor:
       name: Water leak sensor
       description: "The Tuya water leak binary sensor entity"
@@ -109,7 +111,9 @@ action:
           - condition: trigger
             id: leak_detected
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "🚨 Water Leak Detected!"
               message: >-
@@ -136,7 +140,9 @@ action:
                 - condition: state
                   entity_id: !input water_leak_sensor
                   state: "on"
-                - service: "{{ notify_target }}"
+                - action: notify.send_message
+                  target:
+                    entity_id: "{{ notify_target }}"
                   data:
                     title: "🚨 Water Leak Still Active!"
                     message: >-
@@ -157,7 +163,9 @@ action:
           - condition: template
             value_template: "{{ do_all_clear }}"
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "✅ Water Leak Cleared"
               message: >-
@@ -170,7 +178,9 @@ action:
           - condition: trigger
             id: low_battery
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "🪫 Water Detector Low Battery"
               message: >-

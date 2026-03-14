@@ -8,9 +8,11 @@ blueprint:
   input:
     notify_service:
       name: Notification service
-      description: "The notification service to use (e.g., notify.mobile_app_your_phone)"
+      description: "Select the notify entity for your device (e.g., mobile app)"
       selector:
-        text:
+        entity:
+          filter:
+            - domain: notify
     alarm_sensor:
       name: Alarm sensor (optional)
       description: "The myUplink alarm/status sensor entity"
@@ -212,7 +214,9 @@ action:
           - condition: trigger
             id: alarm_trigger
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "⚠️ Nibe F470 Alarm"
               message: >-
@@ -230,7 +234,9 @@ action:
           - condition: trigger
             id: compressor_high
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - High Compressor Load"
               message: >-
@@ -245,7 +251,9 @@ action:
           - condition: template
             value_template: "{{ outdoor_temp < 5 }}"
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - Compressor Stopped"
               message: >-
@@ -258,7 +266,9 @@ action:
           - condition: trigger
             id: high_power
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - High Power Usage"
               message: >-
@@ -273,7 +283,9 @@ action:
           - condition: template
             value_template: "{{ fan_sensor is string and fan_sensor != '' }}"
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - Fan Mode Changed"
               message: >-
@@ -290,7 +302,9 @@ action:
                  return_sensor is string and return_sensor != '' and
                  temp_diff > diff_threshold }}
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - Temperature Difference Alert"
               message: >-

@@ -10,9 +10,11 @@ blueprint:
   input:
     notify_service:
       name: Notification service
-      description: "The notification service to use (e.g., notify.mobile_app_your_phone)"
+      description: "Select the notify entity for your device (e.g., mobile app)"
       selector:
-        text:
+        entity:
+          filter:
+            - domain: notify
     climate_entity:
       name: Toshiba AC climate entity
       description: "The Toshiba AC climate entity to monitor"
@@ -159,7 +161,9 @@ action:
                  trigger.from_state.state != trigger.to_state.state and
                  trigger.from_state.state not in ['unavailable', 'unknown'] }}
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - Mode Changed"
               message: >-
@@ -172,7 +176,9 @@ action:
           - condition: trigger
             id: extreme_cold
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - Extreme Cold Warning"
               message: >-
@@ -187,7 +193,9 @@ action:
           - condition: trigger
             id: extreme_hot
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - Extreme Heat Warning"
               message: >-
@@ -202,7 +210,9 @@ action:
           - condition: trigger
             id: high_power
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - High Power Usage"
               message: >-
@@ -218,7 +228,9 @@ action:
           - condition: template
             value_template: "{{ filter_enabled and now().day == filter_day }}"
         sequence:
-          - service: "{{ notify_target }}"
+          - action: notify.send_message
+            target:
+              entity_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - Filter Cleaning Reminder"
               message: >-
