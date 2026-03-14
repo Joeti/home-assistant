@@ -1,0 +1,258 @@
+blueprint:
+  name: "Nibe F470 - Notifications & Monitoring"
+  description: >
+    Monitors your Nibe F470 heat pump and sends notifications for important events:
+    alarm states, compressor issues, abnormal temperatures, and high energy consumption.
+    Supports any notification service (mobile app, email, etc.).
+  domain: automation
+  input:
+    notify_service:
+      name: Notification service
+      description: "The notification service to use (e.g., notify.mobile_app_your_phone)"
+      selector:
+        text:
+    alarm_sensor:
+      name: Alarm sensor (optional)
+      description: "The myUplink alarm/status sensor entity"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+    compressor_frequency_sensor:
+      name: Compressor frequency sensor (optional)
+      description: "The myUplink compressor frequency sensor"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+              domain: sensor
+    outdoor_temp_sensor:
+      name: Outdoor temperature sensor (optional)
+      description: "Outdoor temperature sensor from the heat pump"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+    supply_temp_sensor:
+      name: Supply line temperature sensor (optional)
+      description: "The heat pump supply line temperature sensor"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+              domain: sensor
+    return_temp_sensor:
+      name: Return line temperature sensor (optional)
+      description: "The heat pump return line temperature sensor"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+              domain: sensor
+    energy_sensor:
+      name: Energy consumption sensor (optional)
+      description: "Power consumption sensor for the heat pump (Watts)"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class:
+                - power
+                - energy
+    high_power_threshold:
+      name: High power threshold (W)
+      description: "Send alert when power consumption exceeds this value"
+      default: 5000
+      selector:
+        number:
+          min: 1000
+          max: 15000
+          step: 500
+          unit_of_measurement: "W"
+    compressor_max_frequency:
+      name: Max compressor frequency alert (Hz)
+      description: "Alert when compressor runs above this frequency for extended time"
+      default: 100
+      selector:
+        number:
+          min: 50
+          max: 150
+          step: 5
+          unit_of_measurement: "Hz"
+    compressor_alert_duration:
+      name: High frequency duration (minutes)
+      description: "How long compressor must run at high frequency before alerting"
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 120
+          step: 5
+          unit_of_measurement: "min"
+    supply_return_diff_threshold:
+      name: Supply/return temperature difference threshold (°C)
+      description: "Alert if difference between supply and return exceeds this (may indicate flow issue)"
+      default: 12
+      selector:
+        number:
+          min: 5
+          max: 25
+          step: 1
+          unit_of_measurement: "°C"
+    notification_cooldown:
+      name: Notification cooldown (minutes)
+      description: "Minimum time between repeated notifications of the same type"
+      default: 60
+      selector:
+        number:
+          min: 15
+          max: 360
+          step: 15
+          unit_of_measurement: "min"
+
+mode: parallel
+max: 5
+
+trigger:
+  # Alarm state change
+  - platform: state
+    entity_id: !input alarm_sensor
+    id: alarm_trigger
+  # Compressor high frequency
+  - platform: numeric_state
+    entity_id: !input compressor_frequency_sensor
+    above: !input compressor_max_frequency
+    for:
+      minutes: !input compressor_alert_duration
+    id: compressor_high
+  # Compressor stopped unexpectedly (frequency drops to 0 while outdoor is cold)
+  - platform: numeric_state
+    entity_id: !input compressor_frequency_sensor
+    below: 1
+    for:
+      minutes: 30
+    id: compressor_stopped
+  # High power consumption
+  - platform: numeric_state
+    entity_id: !input energy_sensor
+    above: !input high_power_threshold
+    for:
+      minutes: 15
+    id: high_power
+  # Periodic check for supply/return diff
+  - platform: time_pattern
+    minutes: "/15"
+    id: periodic_check
+
+variables:
+  notify_target: !input notify_service
+  supply_sensor: !input supply_temp_sensor
+  return_sensor: !input return_temp_sensor
+  outdoor_sensor: !input outdoor_temp_sensor
+  diff_threshold: !input supply_return_diff_threshold
+  supply_temp: >-
+    {% if supply_sensor is string and supply_sensor != '' %}
+      {{ states(supply_sensor) | float(0) }}
+    {% else %}
+      0
+    {% endif %}
+  return_temp: >-
+    {% if return_sensor is string and return_sensor != '' %}
+      {{ states(return_sensor) | float(0) }}
+    {% else %}
+      0
+    {% endif %}
+  outdoor_temp: >-
+    {% if outdoor_sensor is string and outdoor_sensor != '' %}
+      {{ states(outdoor_sensor) | float(0) }}
+    {% else %}
+      0
+    {% endif %}
+  temp_diff: "{{ (supply_temp - return_temp) | abs }}"
+
+action:
+  - choose:
+      # Alarm triggered
+      - conditions:
+          - condition: trigger
+            id: alarm_trigger
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "⚠️ Nibe F470 Alarm"
+              message: >-
+                Heat pump alarm state changed to: {{ states(trigger.entity_id) }}.
+                Please check your heat pump.
+              data:
+                priority: high
+                push:
+                  sound:
+                    name: default
+                    critical: 1
+
+      # Compressor running at high frequency
+      - conditions:
+          - condition: trigger
+            id: compressor_high
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Nibe F470 - High Compressor Load"
+              message: >-
+                Compressor has been running above {{ states(trigger.entity_id) }} Hz
+                for an extended period. Outdoor temp: {{ outdoor_temp }}°C.
+                This may indicate undersized capacity or an issue.
+
+      # Compressor stopped
+      - conditions:
+          - condition: trigger
+            id: compressor_stopped
+          - condition: template
+            value_template: "{{ outdoor_temp < 5 }}"
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Nibe F470 - Compressor Stopped"
+              message: >-
+                Compressor has been at 0 Hz for 30+ minutes while outdoor
+                temperature is {{ outdoor_temp }}°C. This may indicate a
+                problem if heating is expected.
+
+      # High power consumption
+      - conditions:
+          - condition: trigger
+            id: high_power
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Nibe F470 - High Power Usage"
+              message: >-
+                Heat pump power consumption has been above
+                {{ states(trigger.entity_id) }}W for 15+ minutes.
+                Check if auxiliary/backup heater is running.
+
+      # Periodic check: supply/return temperature difference
+      - conditions:
+          - condition: trigger
+            id: periodic_check
+          - condition: template
+            value_template: >-
+              {{ supply_sensor is string and supply_sensor != '' and
+                 return_sensor is string and return_sensor != '' and
+                 temp_diff > diff_threshold }}
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Nibe F470 - Temperature Difference Alert"
+              message: >-
+                Large difference between supply ({{ supply_temp }}°C) and
+                return ({{ return_temp }}°C) temperature: {{ temp_diff }}°C.
+                This may indicate a circulation issue. Check radiator valves
+                and circulation pump.

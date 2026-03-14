@@ -1,0 +1,165 @@
+blueprint:
+  name: "Nibe F470 - Electricity Price Optimization"
+  description: >
+    Adjusts the heating curve offset of your Nibe F470 heat pump based on
+    Nordpool spot electricity prices. When prices are low, heating is increased
+    (positive offset). When prices are high, heating is reduced (negative offset).
+    This takes advantage of the building's thermal mass to pre-heat during cheap
+    hours and coast during expensive ones.
+  domain: automation
+  input:
+    nordpool_sensor:
+      name: Nordpool sensor
+      description: "The Nordpool electricity price sensor"
+      selector:
+        entity:
+          filter:
+            - integration: nordpool
+    heating_offset:
+      name: Heating curve offset
+      description: "The myUplink heating offset entity (climate system 1)"
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+              domain: number
+    price_low_threshold:
+      name: Low price threshold (cents/kWh)
+      description: "Below this price, increase heating"
+      default: 5
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.5
+          unit_of_measurement: "c/kWh"
+    price_high_threshold:
+      name: High price threshold (cents/kWh)
+      description: "Above this price, reduce heating"
+      default: 15
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.5
+          unit_of_measurement: "c/kWh"
+    price_very_high_threshold:
+      name: Very high price threshold (cents/kWh)
+      description: "Above this price, reduce heating aggressively"
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 200
+          step: 1
+          unit_of_measurement: "c/kWh"
+    offset_low_price:
+      name: Offset at low price
+      description: "Heating offset when price is below low threshold (positive = warmer)"
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 1
+    offset_normal_price:
+      name: Offset at normal price
+      description: "Heating offset when price is between low and high thresholds"
+      default: 0
+      selector:
+        number:
+          min: -5
+          max: 5
+          step: 1
+    offset_high_price:
+      name: Offset at high price
+      description: "Heating offset when price is above high threshold (negative = cooler)"
+      default: -3
+      selector:
+        number:
+          min: -10
+          max: 0
+          step: 1
+    offset_very_high_price:
+      name: Offset at very high price
+      description: "Heating offset when price is above very high threshold"
+      default: -5
+      selector:
+        number:
+          min: -10
+          max: 0
+          step: 1
+    min_outdoor_temp:
+      name: Minimum outdoor temperature (optional)
+      description: >
+        Below this outdoor temperature, price optimization is disabled and
+        offset is set to 0 to ensure adequate heating. Set to -50 to disable.
+      default: -20
+      selector:
+        number:
+          min: -50
+          max: 10
+          step: 1
+          unit_of_measurement: "°C"
+    outdoor_temp_sensor:
+      name: Outdoor temperature sensor (optional)
+      description: "Outdoor temperature sensor from the heat pump or weather"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input nordpool_sensor
+  - platform: time_pattern
+    minutes: "/30"
+
+variables:
+  price_sensor: !input nordpool_sensor
+  current_price: "{{ states(price_sensor) | float(0) }}"
+  low_threshold: !input price_low_threshold
+  high_threshold: !input price_high_threshold
+  very_high_threshold: !input price_very_high_threshold
+  low_offset: !input offset_low_price
+  normal_offset: !input offset_normal_price
+  high_offset: !input offset_high_price
+  very_high_offset: !input offset_very_high_price
+  min_temp: !input min_outdoor_temp
+  outdoor_sensor: !input outdoor_temp_sensor
+  outdoor_temp: >-
+    {% if outdoor_sensor is string and outdoor_sensor != '' %}
+      {{ states(outdoor_sensor) | float(0) }}
+    {% else %}
+      0
+    {% endif %}
+  cold_override: >-
+    {% if outdoor_sensor is string and outdoor_sensor != '' %}
+      {{ outdoor_temp < min_temp }}
+    {% else %}
+      false
+    {% endif %}
+  target_offset: >-
+    {% if cold_override == 'true' or cold_override == true %}
+      0
+    {% elif current_price >= very_high_threshold %}
+      {{ very_high_offset }}
+    {% elif current_price >= high_threshold %}
+      {{ high_offset }}
+    {% elif current_price <= low_threshold %}
+      {{ low_offset }}
+    {% else %}
+      {{ normal_offset }}
+    {% endif %}
+
+action:
+  - service: number.set_value
+    target:
+      entity_id: !input heating_offset
+    data:
+      value: "{{ target_offset | int }}"
