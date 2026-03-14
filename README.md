@@ -32,6 +32,14 @@ Optimizes hot water heating based on electricity prices:
 - Reduces target temperatures during expensive hours
 - **Boost windows** before configurable times (e.g., morning/evening showers)
 
+#### 5. Fireplace Mode
+**File:** `blueprints/automation/nibe_f470/fireplace_mode.yaml`
+
+Toggles air conditioning into fireplace mode via a dashboard button:
+- Sets AC mode to value 3 (fireplace) when toggled on, back to 0 (normal) when off
+- Uses an `input_boolean` helper as a simple on/off switch
+- Optional auto-disable after a configurable duration (default 3 hours)
+
 #### 4. Notifications & Monitoring
 **File:** `blueprints/automation/nibe_f470/notifications_monitoring.yaml`
 
@@ -55,3 +63,4 @@ Monitors heat pump health and sends alerts for:
 - [myUplink integration](https://www.home-assistant.io/integrations/myuplink/) configured with your Nibe F470
 - [Nordpool integration](https://www.home-assistant.io/integrations/nordpool/) for price-based automations
 - A notification service for monitoring alerts
+- An `input_boolean` helper for fireplace mode toggle

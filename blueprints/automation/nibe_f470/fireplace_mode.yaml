@@ -1,0 +1,111 @@
+blueprint:
+  name: "Nibe F470 - Fireplace Mode"
+  description: >
+    Toggles the heat pump's air conditioning into fireplace mode (value 3) when
+    an input_boolean is turned on, and restores it to normal (value 0) when
+    turned off. Use a dashboard button or automation to toggle the helper.
+    Optionally auto-disables after a configurable duration.
+  domain: automation
+  input:
+    fireplace_toggle:
+      name: Fireplace mode toggle
+      description: "An input_boolean helper that controls fireplace mode on/off"
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    ac_mode_entity:
+      name: Air conditioning mode entity
+      description: "The myUplink number entity for air conditioning mode"
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+              domain: number
+    fireplace_value:
+      name: Fireplace mode value
+      description: "The numeric value that activates fireplace mode"
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 1
+    normal_value:
+      name: Normal mode value
+      description: "The numeric value for normal operation"
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 1
+    auto_off_enabled:
+      name: Auto-disable fireplace mode
+      description: "Automatically turn off fireplace mode after a set duration"
+      default: true
+      selector:
+        boolean:
+    auto_off_duration:
+      name: Auto-disable duration (hours)
+      description: "Turn off fireplace mode after this many hours (if auto-disable is enabled)"
+      default: 3
+      selector:
+        number:
+          min: 0.5
+          max: 12
+          step: 0.5
+          unit_of_measurement: "h"
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input fireplace_toggle
+    to: "on"
+    id: fireplace_on
+  - platform: state
+    entity_id: !input fireplace_toggle
+    to: "off"
+    id: fireplace_off
+
+variables:
+  fireplace_val: !input fireplace_value
+  normal_val: !input normal_value
+  auto_off: !input auto_off_enabled
+  duration_hours: !input auto_off_duration
+  toggle_entity: !input fireplace_toggle
+
+action:
+  - choose:
+      # Fireplace mode ON
+      - conditions:
+          - condition: trigger
+            id: fireplace_on
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input ac_mode_entity
+            data:
+              value: "{{ fireplace_val | int }}"
+          - if:
+              - condition: template
+                value_template: "{{ auto_off }}"
+            then:
+              - delay:
+                  hours: "{{ duration_hours | int }}"
+                  minutes: "{{ ((duration_hours % 1) * 60) | int }}"
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input fireplace_toggle
+
+      # Fireplace mode OFF
+      - conditions:
+          - condition: trigger
+            id: fireplace_off
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input ac_mode_entity
+            data:
+              value: "{{ normal_val | int }}"
