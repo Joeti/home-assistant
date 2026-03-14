@@ -1,10 +1,11 @@
 blueprint:
   name: "Nibe F470 - Fireplace Mode"
   description: >
-    Toggles the heat pump's air conditioning into fireplace mode (value 3) when
-    an input_boolean is turned on, and restores it to normal (value 0) when
+    Toggles the heat pump's air conditioning into fireplace mode when
+    an input_boolean is turned on, and restores it to normal when
     turned off. Use a dashboard button or automation to toggle the helper.
     Optionally auto-disables after a configurable duration.
+    Supports both number and select entities from myUplink.
   domain: automation
   input:
     fireplace_toggle:
@@ -16,30 +17,29 @@ blueprint:
             - domain: input_boolean
     ac_mode_entity:
       name: Air conditioning mode entity
-      description: "The myUplink number entity for air conditioning mode"
+      description: >
+        The myUplink entity for air conditioning / ventilation mode.
+        This can be a number or select entity — look for entities with
+        'ventilation', 'priority', 'air', or 'climate' in the name.
       selector:
         entity:
           filter:
             - integration: myuplink
-              domain: number
+              domain:
+                - number
+                - select
     fireplace_value:
       name: Fireplace mode value
-      description: "The numeric value that activates fireplace mode"
-      default: 3
+      description: "The value that activates fireplace mode (number or option name)"
+      default: "3"
       selector:
-        number:
-          min: 0
-          max: 10
-          step: 1
+        text:
     normal_value:
       name: Normal mode value
-      description: "The numeric value for normal operation"
-      default: 0
+      description: "The value for normal operation (number or option name)"
+      default: "0"
       selector:
-        number:
-          min: 0
-          max: 10
-          step: 1
+        text:
     auto_off_enabled:
       name: Auto-disable fireplace mode
       description: "Automatically turn off fireplace mode after a set duration"
@@ -75,6 +75,8 @@ variables:
   auto_off: !input auto_off_enabled
   duration_hours: !input auto_off_duration
   toggle_entity: !input fireplace_toggle
+  ac_entity: !input ac_mode_entity
+  ac_domain: "{{ ac_entity.split('.')[0] }}"
 
 action:
   - choose:
@@ -83,11 +85,21 @@ action:
           - condition: trigger
             id: fireplace_on
         sequence:
-          - service: number.set_value
-            target:
-              entity_id: !input ac_mode_entity
-            data:
-              value: "{{ fireplace_val | int }}"
+          - if:
+              - condition: template
+                value_template: "{{ ac_domain == 'number' }}"
+            then:
+              - service: number.set_value
+                target:
+                  entity_id: !input ac_mode_entity
+                data:
+                  value: "{{ fireplace_val }}"
+            else:
+              - service: select.select_option
+                target:
+                  entity_id: !input ac_mode_entity
+                data:
+                  option: "{{ fireplace_val }}"
           - if:
               - condition: template
                 value_template: "{{ auto_off }}"
@@ -104,8 +116,18 @@ action:
           - condition: trigger
             id: fireplace_off
         sequence:
-          - service: number.set_value
-            target:
-              entity_id: !input ac_mode_entity
-            data:
-              value: "{{ normal_val | int }}"
+          - if:
+              - condition: template
+                value_template: "{{ ac_domain == 'number' }}"
+            then:
+              - service: number.set_value
+                target:
+                  entity_id: !input ac_mode_entity
+                data:
+                  value: "{{ normal_val }}"
+            else:
+              - service: select.select_option
+                target:
+                  entity_id: !input ac_mode_entity
+                data:
+                  option: "{{ normal_val }}"

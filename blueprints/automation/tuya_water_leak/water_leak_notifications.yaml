@@ -1,0 +1,173 @@
+blueprint:
+  name: "Tuya Water Leak Detector - Notifications"
+  description: >
+    Monitors Tuya water leak detectors and sends critical notifications when
+    water is detected. Supports multiple sensors, repeated alerts while the
+    leak persists, an all-clear notification when the sensor dries, and
+    low battery warnings so your sensors never die silently.
+  domain: automation
+  input:
+    notify_service:
+      name: Notification service
+      description: "The notification service to use (e.g., notify.mobile_app_your_phone)"
+      selector:
+        text:
+    water_leak_sensor:
+      name: Water leak sensor
+      description: "The Tuya water leak binary sensor entity"
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+              device_class: moisture
+    sensor_location:
+      name: Sensor location
+      description: "Friendly name for where this sensor is placed (e.g., Kitchen, Bathroom, Basement)"
+      default: "Unknown location"
+      selector:
+        text:
+    repeat_alert:
+      name: Repeat alert while leak active
+      description: "Send reminder notifications while water is still detected"
+      default: true
+      selector:
+        boolean:
+    repeat_interval:
+      name: Repeat alert interval (minutes)
+      description: "How often to resend the alert while the leak is still active"
+      default: 15
+      selector:
+        number:
+          min: 5
+          max: 120
+          step: 5
+          unit_of_measurement: "min"
+    send_all_clear:
+      name: Send all-clear notification
+      description: "Notify when the sensor no longer detects water"
+      default: true
+      selector:
+        boolean:
+    battery_sensor:
+      name: Battery level sensor (optional)
+      description: "The battery level sensor entity for the water detector"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: battery
+    low_battery_threshold:
+      name: Low battery threshold (%)
+      description: "Send alert when battery drops below this level"
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 50
+          step: 5
+          unit_of_measurement: "%"
+
+mode: parallel
+max: 3
+
+trigger:
+  # Water detected
+  - platform: state
+    entity_id: !input water_leak_sensor
+    to: "on"
+    id: leak_detected
+  # Water cleared
+  - platform: state
+    entity_id: !input water_leak_sensor
+    to: "off"
+    id: leak_cleared
+  # Battery drops below threshold
+  - platform: numeric_state
+    entity_id: !input battery_sensor
+    below: !input low_battery_threshold
+    id: low_battery
+
+variables:
+  notify_target: !input notify_service
+  location: !input sensor_location
+  do_repeat: !input repeat_alert
+  interval: !input repeat_interval
+  do_all_clear: !input send_all_clear
+  battery_entity: !input battery_sensor
+
+action:
+  - choose:
+      # Water leak detected
+      - conditions:
+          - condition: trigger
+            id: leak_detected
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "🚨 Water Leak Detected!"
+              message: >-
+                Water detected at {{ location }}!
+                Sensor: {{ state_attr(trigger.entity_id, 'friendly_name') }}.
+                Check immediately to prevent water damage.
+              data:
+                priority: high
+                push:
+                  sound:
+                    name: default
+                    critical: 1
+          # Repeat alerts while leak persists
+          - condition: template
+            value_template: "{{ do_repeat }}"
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: !input water_leak_sensor
+                  state: "on"
+              sequence:
+                - delay:
+                    minutes: "{{ interval }}"
+                - condition: state
+                  entity_id: !input water_leak_sensor
+                  state: "on"
+                - service: "{{ notify_target }}"
+                  data:
+                    title: "🚨 Water Leak Still Active!"
+                    message: >-
+                      Water is STILL detected at {{ location }}.
+                      Leak has been active since {{ trigger.to_state.last_changed | as_local }}.
+                      Take action immediately!
+                    data:
+                      priority: high
+                      push:
+                        sound:
+                          name: default
+                          critical: 1
+
+      # Leak cleared
+      - conditions:
+          - condition: trigger
+            id: leak_cleared
+          - condition: template
+            value_template: "{{ do_all_clear }}"
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "✅ Water Leak Cleared"
+              message: >-
+                Water is no longer detected at {{ location }}.
+                Sensor: {{ state_attr(trigger.entity_id, 'friendly_name') }}.
+                Please verify the area is dry and check for any damage.
+
+      # Low battery
+      - conditions:
+          - condition: trigger
+            id: low_battery
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "🪫 Water Detector Low Battery"
+              message: >-
+                Water leak sensor at {{ location }} has low battery:
+                {{ states(battery_entity) }}%.
+                Replace the battery to ensure leak detection stays active.
