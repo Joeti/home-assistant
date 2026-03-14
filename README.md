@@ -109,6 +109,15 @@ Monitors heat pump health and sends alerts for:
 - High power consumption
 - Monthly filter cleaning reminders
 
+#### 5. Fireplace Mode
+**File:** `blueprints/automation/toshiba_ac/fireplace_mode.yaml`
+
+Switches the heat pump when a fireplace is lit via a dashboard toggle:
+- Switches to fan-only mode (circulates warm air) or turns off the AC
+- Saves and restores previous HVAC mode and target temperature
+- Optional auto-disable after a configurable duration (default 3 hours)
+- Uses `input_boolean`, `input_text`, and `input_number` helpers
+
 ### Installation
 
 1. Copy the `blueprints/` directory into your Home Assistant config directory
@@ -123,3 +132,4 @@ Monitors heat pump health and sends alerts for:
 - [Nordpool integration](https://www.home-assistant.io/integrations/nordpool/) for price-based optimization
 - An outdoor temperature sensor (or template sensor from AC's outdoor_temperature attribute)
 - A notification service for monitoring alerts
+- `input_boolean`, `input_text`, and `input_number` helpers for fireplace mode
