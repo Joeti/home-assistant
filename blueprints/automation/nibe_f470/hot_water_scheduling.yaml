@@ -1,0 +1,206 @@
+blueprint:
+  name: "Nibe F470 - Hot Water Price Optimization"
+  description: >
+    Adjusts hot water temperature targets based on Nordpool electricity prices.
+    During cheap hours, heats water to a higher temperature (storing energy).
+    During expensive hours, allows the temperature to drop lower before reheating.
+    Also supports a scheduled luxury/boost mode (e.g., before typical shower times).
+  domain: automation
+  input:
+    nordpool_sensor:
+      name: Nordpool sensor
+      description: "The Nordpool electricity price sensor"
+      selector:
+        entity:
+          filter:
+            - integration: nordpool
+    hot_water_start_temp:
+      name: Hot water start temperature entity
+      description: "The myUplink entity for hot water start (trigger) temperature"
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+              domain: number
+    hot_water_stop_temp:
+      name: Hot water stop temperature entity
+      description: "The myUplink entity for hot water stop (target) temperature"
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+              domain: number
+    hot_water_mode:
+      name: Hot water comfort mode entity (optional)
+      description: "The myUplink hot water comfort mode entity, if available. Leave empty to skip."
+      default: {}
+      selector:
+        entity:
+          filter:
+            - integration: myuplink
+    price_low_threshold:
+      name: Low price threshold (cents/kWh)
+      description: "Below this price, heat water to maximum"
+      default: 5
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.5
+          unit_of_measurement: "c/kWh"
+    price_high_threshold:
+      name: High price threshold (cents/kWh)
+      description: "Above this price, use economy hot water settings"
+      default: 15
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.5
+          unit_of_measurement: "c/kWh"
+    start_temp_economy:
+      name: Start temperature - economy
+      description: "Hot water start temp during expensive hours"
+      default: 40
+      selector:
+        number:
+          min: 30
+          max: 55
+          step: 1
+          unit_of_measurement: "°C"
+    stop_temp_economy:
+      name: Stop temperature - economy
+      description: "Hot water stop (target) temp during expensive hours"
+      default: 48
+      selector:
+        number:
+          min: 40
+          max: 55
+          step: 1
+          unit_of_measurement: "°C"
+    start_temp_normal:
+      name: Start temperature - normal
+      description: "Hot water start temp during normal price hours"
+      default: 42
+      selector:
+        number:
+          min: 30
+          max: 55
+          step: 1
+          unit_of_measurement: "°C"
+    stop_temp_normal:
+      name: Stop temperature - normal
+      description: "Hot water stop (target) temp during normal price hours"
+      default: 50
+      selector:
+        number:
+          min: 40
+          max: 60
+          step: 1
+          unit_of_measurement: "°C"
+    start_temp_cheap:
+      name: Start temperature - cheap
+      description: "Hot water start temp during cheap hours (store energy)"
+      default: 45
+      selector:
+        number:
+          min: 35
+          max: 60
+          step: 1
+          unit_of_measurement: "°C"
+    stop_temp_cheap:
+      name: Stop temperature - cheap
+      description: "Hot water stop (target) temp during cheap hours"
+      default: 55
+      selector:
+        number:
+          min: 45
+          max: 65
+          step: 1
+          unit_of_measurement: "°C"
+    boost_time_1:
+      name: Boost time 1 (morning)
+      description: "Pre-heat hot water before this time (e.g., morning showers)"
+      default: "06:00:00"
+      selector:
+        time:
+    boost_time_2:
+      name: Boost time 2 (evening)
+      description: "Pre-heat hot water before this time (e.g., evening showers)"
+      default: "17:00:00"
+      selector:
+        time:
+    boost_preheat_minutes:
+      name: Boost pre-heat duration (minutes)
+      description: "How many minutes before boost time to start heating to max"
+      default: 60
+      selector:
+        number:
+          min: 30
+          max: 180
+          step: 15
+          unit_of_measurement: "min"
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input nordpool_sensor
+  - platform: time_pattern
+    minutes: "/30"
+
+variables:
+  price_sensor: !input nordpool_sensor
+  current_price: "{{ states(price_sensor) | float(0) }}"
+  low_thresh: !input price_low_threshold
+  high_thresh: !input price_high_threshold
+  eco_start: !input start_temp_economy
+  eco_stop: !input stop_temp_economy
+  norm_start: !input start_temp_normal
+  norm_stop: !input stop_temp_normal
+  cheap_start: !input start_temp_cheap
+  cheap_stop: !input stop_temp_cheap
+  boost_1: !input boost_time_1
+  boost_2: !input boost_time_2
+  preheat_min: !input boost_preheat_minutes
+  comfort_mode_entity: !input hot_water_mode
+  now_ts: "{{ as_timestamp(now()) }}"
+  boost_1_ts: "{{ as_timestamp(today_at(boost_1)) }}"
+  boost_2_ts: "{{ as_timestamp(today_at(boost_2)) }}"
+  preheat_sec: "{{ preheat_min * 60 }}"
+  in_boost_window: >-
+    {{ (now_ts >= (boost_1_ts - preheat_sec) and now_ts < boost_1_ts) or
+       (now_ts >= (boost_2_ts - preheat_sec) and now_ts < boost_2_ts) }}
+  target_start_temp: >-
+    {% if in_boost_window %}
+      {{ cheap_start }}
+    {% elif current_price <= low_thresh %}
+      {{ cheap_start }}
+    {% elif current_price >= high_thresh %}
+      {{ eco_start }}
+    {% else %}
+      {{ norm_start }}
+    {% endif %}
+  target_stop_temp: >-
+    {% if in_boost_window %}
+      {{ cheap_stop }}
+    {% elif current_price <= low_thresh %}
+      {{ cheap_stop }}
+    {% elif current_price >= high_thresh %}
+      {{ eco_stop }}
+    {% else %}
+      {{ norm_stop }}
+    {% endif %}
+
+action:
+  - service: number.set_value
+    target:
+      entity_id: !input hot_water_start_temp
+    data:
+      value: "{{ target_start_temp | int }}"
+  - service: number.set_value
+    target:
+      entity_id: !input hot_water_stop_temp
+    data:
+      value: "{{ target_stop_temp | int }}"
