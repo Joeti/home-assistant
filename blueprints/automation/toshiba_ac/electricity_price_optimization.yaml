@@ -1,0 +1,157 @@
+blueprint:
+  name: "Toshiba AC - Electricity Price Optimization"
+  description: >
+    Adjusts the Toshiba heat pump target temperature based on Nordpool
+    electricity spot prices. During cheap hours, the target temperature is
+    increased (in heating mode) or decreased (in cooling mode) to pre-condition
+    the space. During expensive hours, the target is reduced/increased to
+    coast on stored thermal energy. Includes a cold weather override that
+    disables price optimization when it's too cold outside.
+    Requires the Toshiba AC custom integration (toshiba_ac) and Nordpool integration.
+  domain: automation
+  input:
+    climate_entity:
+      name: Toshiba AC climate entity
+      description: "The Toshiba AC climate entity to control"
+      selector:
+        entity:
+          filter:
+            - domain: climate
+              integration: toshiba_ac
+    nordpool_sensor:
+      name: Nordpool price sensor
+      description: "The Nordpool current price sensor"
+      selector:
+        entity:
+          filter:
+            - integration: nordpool
+              domain: sensor
+    base_temp:
+      name: Base target temperature
+      description: "Normal target temperature when prices are average"
+      default: 22
+      selector:
+        number:
+          min: 17
+          max: 30
+          step: 1
+          unit_of_measurement: "°C"
+    price_low_threshold:
+      name: Low price threshold
+      description: "Price below this is considered cheap (adjust to your area)"
+      default: 0.05
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.01
+          unit_of_measurement: "€/kWh"
+    price_high_threshold:
+      name: High price threshold
+      description: "Price above this is considered expensive"
+      default: 0.15
+      selector:
+        number:
+          min: 0
+          max: 2
+          step: 0.01
+          unit_of_measurement: "€/kWh"
+    cheap_offset:
+      name: Cheap price temperature offset
+      description: >
+        Offset applied during cheap electricity. In heating mode this is
+        added (pre-heat), in cooling mode this is subtracted (pre-cool).
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 5
+          step: 1
+          unit_of_measurement: "°C"
+    expensive_offset:
+      name: Expensive price temperature offset
+      description: >
+        Offset applied during expensive electricity. In heating mode this is
+        subtracted (save energy), in cooling mode this is added (save energy).
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 5
+          step: 1
+          unit_of_measurement: "°C"
+    outdoor_temp_sensor:
+      name: Outdoor temperature sensor (optional)
+      description: "Outdoor temperature sensor for cold weather override. Leave empty to disable."
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+    cold_override_temp:
+      name: Cold weather override temperature (°C)
+      description: "Disable price optimization when outdoor temp drops below this (keeps base temp)"
+      default: -10
+      selector:
+        number:
+          min: -30
+          max: 10
+          step: 1
+          unit_of_measurement: "°C"
+
+mode: restart
+
+trigger:
+  - platform: time_pattern
+    minutes: "/15"
+
+variables:
+  climate_entity: !input climate_entity
+  nordpool: !input nordpool_sensor
+  base: !input base_temp
+  low_threshold: !input price_low_threshold
+  high_threshold: !input price_high_threshold
+  cheap_adj: !input cheap_offset
+  expensive_adj: !input expensive_offset
+  outdoor_sensor: !input outdoor_temp_sensor
+  cold_override: !input cold_override_temp
+  current_price: "{{ states(nordpool) | float(0) }}"
+  current_mode: "{{ states(climate_entity) }}"
+  is_heating: "{{ current_mode in ['heat', 'auto'] }}"
+  outdoor_temp: >-
+    {% if outdoor_sensor is string and outdoor_sensor != '' %}
+      {{ states(outdoor_sensor) | float(0) }}
+    {% else %}
+      99
+    {% endif %}
+  cold_override_active: "{{ outdoor_temp < cold_override }}"
+  target_temp: >-
+    {% if cold_override_active %}
+      {{ base }}
+    {% elif current_price < low_threshold %}
+      {% if is_heating %}
+        {{ [base + cheap_adj, 30] | min }}
+      {% else %}
+        {{ [base - cheap_adj, 17] | max }}
+      {% endif %}
+    {% elif current_price > high_threshold %}
+      {% if is_heating %}
+        {{ [base - expensive_adj, 17] | max }}
+      {% else %}
+        {{ [base + expensive_adj, 30] | min }}
+      {% endif %}
+    {% else %}
+      {{ base }}
+    {% endif %}
+
+action:
+  - condition: template
+    value_template: >-
+      {{ current_mode not in ['off', 'unavailable', 'unknown'] and
+         state_attr(climate_entity, 'temperature') | float(0) != target_temp | float(0) }}
+  - service: climate.set_temperature
+    target:
+      entity_id: !input climate_entity
+    data:
+      temperature: "{{ target_temp | float }}"

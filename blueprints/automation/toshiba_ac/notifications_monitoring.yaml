@@ -1,0 +1,220 @@
+blueprint:
+  name: "Toshiba AC - Notifications & Monitoring"
+  description: >
+    Monitors your Toshiba heat pump and sends notifications for important events:
+    HVAC mode changes, outdoor temperature extremes, high energy consumption,
+    and periodic filter cleaning reminders. Supports any notification service
+    (mobile app, email, etc.).
+    Requires the Toshiba AC custom integration (toshiba_ac).
+  domain: automation
+  input:
+    notify_service:
+      name: Notification service
+      description: "The notification service to use (e.g., notify.mobile_app_your_phone)"
+      selector:
+        text:
+    climate_entity:
+      name: Toshiba AC climate entity
+      description: "The Toshiba AC climate entity to monitor"
+      selector:
+        entity:
+          filter:
+            - domain: climate
+              integration: toshiba_ac
+    outdoor_temp_sensor:
+      name: Outdoor temperature sensor (optional)
+      description: "Outdoor temperature sensor for extreme weather alerts"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+    energy_sensor:
+      name: Energy consumption sensor (optional)
+      description: "Power consumption sensor for the heat pump (Watts)"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class:
+                - power
+                - energy
+    cold_temp_threshold:
+      name: Cold temperature alert (°C)
+      description: "Send alert when outdoor temperature drops below this value"
+      default: -15
+      selector:
+        number:
+          min: -30
+          max: 5
+          step: 1
+          unit_of_measurement: "°C"
+    hot_temp_threshold:
+      name: Hot temperature alert (°C)
+      description: "Send alert when outdoor temperature rises above this value"
+      default: 35
+      selector:
+        number:
+          min: 25
+          max: 45
+          step: 1
+          unit_of_measurement: "°C"
+    high_power_threshold:
+      name: High power threshold (W)
+      description: "Send alert when power consumption exceeds this value for 15+ minutes"
+      default: 3000
+      selector:
+        number:
+          min: 500
+          max: 10000
+          step: 100
+          unit_of_measurement: "W"
+    filter_reminder_enabled:
+      name: Enable filter cleaning reminder
+      description: "Send a periodic reminder to clean the AC filter"
+      default: true
+      selector:
+        boolean:
+    filter_reminder_day:
+      name: Filter reminder day of month
+      description: "Day of the month to send the filter cleaning reminder"
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 28
+          step: 1
+    notify_on_mode_change:
+      name: Notify on HVAC mode change
+      description: "Send a notification when the heat pump HVAC mode changes"
+      default: true
+      selector:
+        boolean:
+
+mode: parallel
+max: 5
+
+trigger:
+  # HVAC mode changed
+  - platform: state
+    entity_id: !input climate_entity
+    id: mode_changed
+  # Outdoor temperature extremes
+  - platform: numeric_state
+    entity_id: !input outdoor_temp_sensor
+    below: !input cold_temp_threshold
+    for:
+      minutes: 10
+    id: extreme_cold
+  - platform: numeric_state
+    entity_id: !input outdoor_temp_sensor
+    above: !input hot_temp_threshold
+    for:
+      minutes: 10
+    id: extreme_hot
+  # High power consumption
+  - platform: numeric_state
+    entity_id: !input energy_sensor
+    above: !input high_power_threshold
+    for:
+      minutes: 15
+    id: high_power
+  # Monthly filter reminder (fires daily, filtered in action)
+  - platform: time
+    at: "09:00:00"
+    id: filter_check
+
+variables:
+  notify_target: !input notify_service
+  climate_entity: !input climate_entity
+  outdoor_sensor: !input outdoor_temp_sensor
+  energy: !input energy_sensor
+  filter_enabled: !input filter_reminder_enabled
+  filter_day: !input filter_reminder_day
+  mode_notify: !input notify_on_mode_change
+  outdoor_temp: >-
+    {% if outdoor_sensor is string and outdoor_sensor != '' %}
+      {{ states(outdoor_sensor) | float(0) }}
+    {% else %}
+      0
+    {% endif %}
+
+action:
+  - choose:
+      # HVAC mode changed
+      - conditions:
+          - condition: trigger
+            id: mode_changed
+          - condition: template
+            value_template: >-
+              {{ mode_notify and
+                 trigger.from_state.state != trigger.to_state.state and
+                 trigger.from_state.state not in ['unavailable', 'unknown'] }}
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Toshiba AC - Mode Changed"
+              message: >-
+                Heat pump mode changed from {{ trigger.from_state.state }}
+                to {{ trigger.to_state.state }}.
+                Current target: {{ state_attr(climate_entity, 'temperature') }}°C.
+
+      # Extreme cold
+      - conditions:
+          - condition: trigger
+            id: extreme_cold
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Toshiba AC - Extreme Cold Warning"
+              message: >-
+                Outdoor temperature has dropped to {{ outdoor_temp }}°C.
+                Ensure the heat pump is running in heat mode and consider
+                increasing the target temperature.
+              data:
+                priority: high
+
+      # Extreme hot
+      - conditions:
+          - condition: trigger
+            id: extreme_hot
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Toshiba AC - Extreme Heat Warning"
+              message: >-
+                Outdoor temperature has risen to {{ outdoor_temp }}°C.
+                Ensure the heat pump is running in cool mode. Performance
+                may be reduced at extreme temperatures.
+              data:
+                priority: high
+
+      # High power consumption
+      - conditions:
+          - condition: trigger
+            id: high_power
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Toshiba AC - High Power Usage"
+              message: >-
+                Heat pump power consumption has been above
+                {{ states(trigger.entity_id) }}W for 15+ minutes.
+                Current mode: {{ states(climate_entity) }},
+                target: {{ state_attr(climate_entity, 'temperature') }}°C.
+
+      # Monthly filter cleaning reminder
+      - conditions:
+          - condition: trigger
+            id: filter_check
+          - condition: template
+            value_template: "{{ filter_enabled and now().day == filter_day }}"
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "Toshiba AC - Filter Cleaning Reminder"
+              message: >-
+                Monthly reminder: Check and clean your Toshiba heat pump
+                filters for optimal performance and air quality.

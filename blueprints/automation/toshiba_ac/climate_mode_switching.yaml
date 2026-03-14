@@ -1,0 +1,149 @@
+blueprint:
+  name: "Toshiba AC - Climate Mode Switching"
+  description: >
+    Automatically switches the Toshiba heat pump between heating and cooling
+    modes based on outdoor temperature. Uses the outdoor temperature from
+    a sensor (or the AC unit's own outdoor temp attribute) to determine
+    the appropriate HVAC mode. Includes a deadband to prevent rapid switching
+    between modes. Can optionally turn off the AC when outdoor temperature
+    is in the comfortable range.
+    Requires the Toshiba AC custom integration (toshiba_ac).
+  domain: automation
+  input:
+    climate_entity:
+      name: Toshiba AC climate entity
+      description: "The Toshiba AC climate entity to control"
+      selector:
+        entity:
+          filter:
+            - domain: climate
+              integration: toshiba_ac
+    outdoor_temp_sensor:
+      name: Outdoor temperature sensor
+      description: >
+        An outdoor temperature sensor. If you don't have a separate one,
+        use a template sensor based on the AC's outdoor_temperature attribute.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+    heat_threshold:
+      name: Switch to heating below (°C)
+      description: "Switch to heat mode when outdoor temperature drops below this value"
+      default: 15
+      selector:
+        number:
+          min: 0
+          max: 25
+          step: 1
+          unit_of_measurement: "°C"
+    cool_threshold:
+      name: Switch to cooling above (°C)
+      description: "Switch to cool mode when outdoor temperature rises above this value"
+      default: 25
+      selector:
+        number:
+          min: 15
+          max: 40
+          step: 1
+          unit_of_measurement: "°C"
+    off_in_deadband:
+      name: Turn off in deadband
+      description: >
+        Turn off the AC when outdoor temperature is between heating and cooling
+        thresholds (the deadband zone). If disabled, keeps the current mode.
+      default: false
+      selector:
+        boolean:
+    heat_target_temp:
+      name: Heating target temperature
+      description: "Target temperature when in heating mode"
+      default: 22
+      selector:
+        number:
+          min: 17
+          max: 30
+          step: 1
+          unit_of_measurement: "°C"
+    cool_target_temp:
+      name: Cooling target temperature
+      description: "Target temperature when in cooling mode"
+      default: 24
+      selector:
+        number:
+          min: 17
+          max: 30
+          step: 1
+          unit_of_measurement: "°C"
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input outdoor_temp_sensor
+    below: !input heat_threshold
+    for:
+      minutes: 15
+    id: need_heat
+  - platform: numeric_state
+    entity_id: !input outdoor_temp_sensor
+    above: !input cool_threshold
+    for:
+      minutes: 15
+    id: need_cool
+  - platform: numeric_state
+    entity_id: !input outdoor_temp_sensor
+    above: !input heat_threshold
+    below: !input cool_threshold
+    for:
+      minutes: 30
+    id: in_deadband
+
+variables:
+  off_when_deadband: !input off_in_deadband
+  climate_entity: !input climate_entity
+  current_mode: "{{ states(climate_entity) }}"
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: need_heat
+        sequence:
+          - service: climate.set_hvac_mode
+            target:
+              entity_id: !input climate_entity
+            data:
+              hvac_mode: heat
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: !input heat_target_temp
+
+      - conditions:
+          - condition: trigger
+            id: need_cool
+        sequence:
+          - service: climate.set_hvac_mode
+            target:
+              entity_id: !input climate_entity
+            data:
+              hvac_mode: cool
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: !input cool_target_temp
+
+      - conditions:
+          - condition: trigger
+            id: in_deadband
+          - condition: template
+            value_template: "{{ off_when_deadband }}"
+        sequence:
+          - service: climate.turn_off
+            target:
+              entity_id: !input climate_entity
