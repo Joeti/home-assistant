@@ -3,7 +3,8 @@ blueprint:
   description: >
     Monitors Tuya water leak detectors and sends critical notifications when
     water is detected. Supports multiple sensors, repeated alerts while the
-    leak persists, and an all-clear notification when the sensor dries.
+    leak persists, an all-clear notification when the sensor dries, and
+    low battery warnings so your sensors never die silently.
   domain: automation
   input:
     notify_service:
@@ -47,8 +48,28 @@ blueprint:
       default: true
       selector:
         boolean:
+    battery_sensor:
+      name: Battery level sensor (optional)
+      description: "The battery level sensor entity for the water detector"
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: battery
+    low_battery_threshold:
+      name: Low battery threshold (%)
+      description: "Send alert when battery drops below this level"
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 50
+          step: 5
+          unit_of_measurement: "%"
 
-mode: restart
+mode: parallel
+max: 3
 
 trigger:
   # Water detected
@@ -61,6 +82,11 @@ trigger:
     entity_id: !input water_leak_sensor
     to: "off"
     id: leak_cleared
+  # Battery drops below threshold
+  - platform: numeric_state
+    entity_id: !input battery_sensor
+    below: !input low_battery_threshold
+    id: low_battery
 
 variables:
   notify_target: !input notify_service
@@ -68,6 +94,7 @@ variables:
   do_repeat: !input repeat_alert
   interval: !input repeat_interval
   do_all_clear: !input send_all_clear
+  battery_entity: !input battery_sensor
 
 action:
   - choose:
@@ -131,3 +158,16 @@ action:
                 Water is no longer detected at {{ location }}.
                 Sensor: {{ state_attr(trigger.entity_id, 'friendly_name') }}.
                 Please verify the area is dry and check for any damage.
+
+      # Low battery
+      - conditions:
+          - condition: trigger
+            id: low_battery
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "🪫 Water Detector Low Battery"
+              message: >-
+                Water leak sensor at {{ location }} has low battery:
+                {{ states(battery_entity) }}%.
+                Replace the battery to ensure leak detection stays active.
