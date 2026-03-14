@@ -79,10 +79,16 @@ trigger:
   - platform: state
     entity_id: !input fireplace_toggle
     to: "on"
+    not_from:
+      - "unavailable"
+      - "unknown"
     id: fireplace_on
   - platform: state
     entity_id: !input fireplace_toggle
     to: "off"
+    not_from:
+      - "unavailable"
+      - "unknown"
     id: fireplace_off
 
 variables:

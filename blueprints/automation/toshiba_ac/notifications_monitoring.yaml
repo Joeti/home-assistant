@@ -100,6 +100,12 @@ trigger:
   # HVAC mode changed
   - platform: state
     entity_id: !input climate_entity
+    not_from:
+      - "unavailable"
+      - "unknown"
+    not_to:
+      - "unavailable"
+      - "unknown"
     id: mode_changed
   # Outdoor temperature extremes
   - platform: numeric_state

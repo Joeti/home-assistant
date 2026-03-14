@@ -76,11 +76,17 @@ trigger:
   - platform: state
     entity_id: !input water_leak_sensor
     to: "on"
+    not_from:
+      - "unavailable"
+      - "unknown"
     id: leak_detected
   # Water cleared
   - platform: state
     entity_id: !input water_leak_sensor
     to: "off"
+    not_from:
+      - "unavailable"
+      - "unknown"
     id: leak_cleared
   # Battery drops below threshold
   - platform: numeric_state
