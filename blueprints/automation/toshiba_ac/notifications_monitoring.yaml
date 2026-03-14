@@ -8,13 +8,13 @@ blueprint:
     Requires the Toshiba AC custom integration (toshiba_ac).
   domain: automation
   input:
-    notify_service:
-      name: Notification service
-      description: "Select the notify entity for your device (e.g., mobile app)"
+    notify_device:
+      name: Device to notify
+      description: "Select the mobile device to receive notifications"
       selector:
-        entity:
+        device:
           filter:
-            - domain: notify
+            - integration: mobile_app
     climate_entity:
       name: Toshiba AC climate entity
       description: "The Toshiba AC climate entity to monitor"
@@ -135,7 +135,7 @@ trigger:
     id: filter_check
 
 variables:
-  notify_target: !input notify_service
+  notify_target: !input notify_device
   climate_entity: !input climate_entity
   outdoor_sensor: !input outdoor_temp_sensor
   energy: !input energy_sensor
@@ -163,7 +163,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - Mode Changed"
               message: >-
@@ -178,7 +178,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - Extreme Cold Warning"
               message: >-
@@ -195,7 +195,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - Extreme Heat Warning"
               message: >-
@@ -212,7 +212,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - High Power Usage"
               message: >-
@@ -230,7 +230,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Toshiba AC - Filter Cleaning Reminder"
               message: >-
