@@ -135,6 +135,12 @@ trigger:
   # Alarm state change
   - platform: state
     entity_id: !input alarm_sensor
+    not_from:
+      - "unavailable"
+      - "unknown"
+    not_to:
+      - "unavailable"
+      - "unknown"
     id: alarm_trigger
   # Compressor high frequency
   - platform: numeric_state
@@ -160,6 +166,12 @@ trigger:
   # Fan mode changed
   - platform: state
     entity_id: !input fan_mode_sensor
+    not_from:
+      - "unavailable"
+      - "unknown"
+    not_to:
+      - "unavailable"
+      - "unknown"
     id: fan_mode_changed
   # Periodic check for supply/return diff
   - platform: time_pattern

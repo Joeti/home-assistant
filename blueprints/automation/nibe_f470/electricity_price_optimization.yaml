@@ -117,10 +117,17 @@ max_exceeded: silent
 trigger:
   - platform: state
     entity_id: !input nordpool_sensor
+    not_from:
+      - "unavailable"
+      - "unknown"
+    not_to:
+      - "unavailable"
+      - "unknown"
   - platform: time_pattern
     minutes: "/30"
 
 variables:
+  heating_offset_entity: !input heating_offset
   price_sensor: !input nordpool_sensor
   current_price: "{{ states(price_sensor) | float(0) }}"
   low_threshold: !input price_low_threshold
@@ -158,6 +165,9 @@ variables:
     {% endif %}
 
 action:
+  - condition: template
+    value_template: >-
+      {{ states(heating_offset_entity) | int(0) != target_offset | int }}
   - service: number.set_value
     target:
       entity_id: !input heating_offset

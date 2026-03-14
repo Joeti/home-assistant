@@ -147,10 +147,18 @@ max_exceeded: silent
 trigger:
   - platform: state
     entity_id: !input nordpool_sensor
+    not_from:
+      - "unavailable"
+      - "unknown"
+    not_to:
+      - "unavailable"
+      - "unknown"
   - platform: time_pattern
     minutes: "/30"
 
 variables:
+  start_temp_entity: !input hot_water_start_temp
+  stop_temp_entity: !input hot_water_stop_temp
   price_sensor: !input nordpool_sensor
   current_price: "{{ states(price_sensor) | float(0) }}"
   low_thresh: !input price_low_threshold
@@ -194,6 +202,10 @@ variables:
     {% endif %}
 
 action:
+  - condition: template
+    value_template: >-
+      {{ states(start_temp_entity) | int(0) != target_start_temp | int or
+         states(stop_temp_entity) | int(0) != target_stop_temp | int }}
   - service: number.set_value
     target:
       entity_id: !input hot_water_start_temp

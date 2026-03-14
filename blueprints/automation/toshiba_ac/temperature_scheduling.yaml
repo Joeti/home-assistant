@@ -112,6 +112,12 @@ trigger:
     id: time_check
   - platform: state
     entity_id: !input presence_sensor
+    not_from:
+      - "unavailable"
+      - "unknown"
+    not_to:
+      - "unavailable"
+      - "unknown"
     id: presence_change
 
 variables:

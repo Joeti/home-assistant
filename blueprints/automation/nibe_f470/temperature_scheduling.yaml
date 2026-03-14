@@ -106,9 +106,16 @@ trigger:
     id: time_check
   - platform: state
     entity_id: !input presence_sensor
+    not_from:
+      - "unavailable"
+      - "unknown"
+    not_to:
+      - "unavailable"
+      - "unknown"
     id: presence_change
 
 variables:
+  heating_offset_entity: !input heating_offset
   presence: !input presence_sensor
   is_home: >-
     {% if presence is string and presence != '' %}
@@ -142,6 +149,9 @@ variables:
     {% endif %}
 
 action:
+  - condition: template
+    value_template: >-
+      {{ states(heating_offset_entity) | int(0) != target_offset | int }}
   - service: number.set_value
     target:
       entity_id: !input heating_offset
