@@ -1,0 +1,146 @@
+blueprint:
+  name: "Toshiba AC - Fireplace Mode"
+  description: >
+    Switches the Toshiba heat pump to fan-only mode (or turns it off) when
+    a fireplace is lit, preventing the AC from fighting the extra heat.
+    Saves the previous HVAC mode and target temperature, then restores them
+    when fireplace mode is turned off. Toggle via a dashboard button linked
+    to an input_boolean helper. Optionally auto-disables after a configurable
+    duration.
+    Requires the Toshiba AC custom integration (toshiba_ac).
+  domain: automation
+  input:
+    fireplace_toggle:
+      name: Fireplace mode toggle
+      description: "An input_boolean helper that controls fireplace mode on/off"
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    climate_entity:
+      name: Toshiba AC climate entity
+      description: "The Toshiba AC climate entity to control"
+      selector:
+        entity:
+          filter:
+            - domain: climate
+              integration: toshiba_ac
+    fireplace_action:
+      name: Fireplace mode action
+      description: >
+        What to do when fireplace is lit. Fan-only circulates warm air from the
+        fireplace. Turn off stops the AC entirely.
+      default: "fan_only"
+      selector:
+        select:
+          options:
+            - label: "Fan only (circulate warm air)"
+              value: "fan_only"
+            - label: "Turn off AC"
+              value: "off"
+    restore_mode_helper:
+      name: Previous HVAC mode helper
+      description: >
+        An input_text helper to store the previous HVAC mode so it can be
+        restored when fireplace mode is turned off.
+      selector:
+        entity:
+          filter:
+            - domain: input_text
+    restore_temp_helper:
+      name: Previous temperature helper
+      description: >
+        An input_number helper to store the previous target temperature so it
+        can be restored when fireplace mode is turned off.
+      selector:
+        entity:
+          filter:
+            - domain: input_number
+    auto_off_enabled:
+      name: Auto-disable fireplace mode
+      description: "Automatically turn off fireplace mode after a set duration"
+      default: true
+      selector:
+        boolean:
+    auto_off_duration:
+      name: Auto-disable duration (hours)
+      description: "Turn off fireplace mode after this many hours (if auto-disable is enabled)"
+      default: 3
+      selector:
+        number:
+          min: 0.5
+          max: 12
+          step: 0.5
+          unit_of_measurement: "h"
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input fireplace_toggle
+    to: "on"
+    id: fireplace_on
+  - platform: state
+    entity_id: !input fireplace_toggle
+    to: "off"
+    id: fireplace_off
+
+variables:
+  climate_entity: !input climate_entity
+  action: !input fireplace_action
+  auto_off: !input auto_off_enabled
+  duration_hours: !input auto_off_duration
+  previous_mode: "{{ states(climate_entity) }}"
+  previous_temp: "{{ state_attr(climate_entity, 'temperature') | float(22) }}"
+
+action:
+  - choose:
+      # Fireplace mode ON
+      - conditions:
+          - condition: trigger
+            id: fireplace_on
+        sequence:
+          # Save current state before changing
+          - service: input_text.set_value
+            target:
+              entity_id: !input restore_mode_helper
+            data:
+              value: "{{ previous_mode }}"
+          - service: input_number.set_value
+            target:
+              entity_id: !input restore_temp_helper
+            data:
+              value: "{{ previous_temp }}"
+          # Apply fireplace action
+          - service: climate.set_hvac_mode
+            target:
+              entity_id: !input climate_entity
+            data:
+              hvac_mode: "{{ action }}"
+          # Auto-off timer
+          - if:
+              - condition: template
+                value_template: "{{ auto_off }}"
+            then:
+              - delay:
+                  hours: "{{ duration_hours | int }}"
+                  minutes: "{{ ((duration_hours % 1) * 60) | int }}"
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input fireplace_toggle
+
+      # Fireplace mode OFF — restore previous state
+      - conditions:
+          - condition: trigger
+            id: fireplace_off
+        sequence:
+          - service: climate.set_hvac_mode
+            target:
+              entity_id: !input climate_entity
+            data:
+              hvac_mode: "{{ states(restore_mode_helper) }}"
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: "{{ states(restore_temp_helper) | float(22) }}"
