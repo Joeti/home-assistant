@@ -1,0 +1,158 @@
+blueprint:
+  name: "Toshiba AC - Temperature Scheduling"
+  description: >
+    Adjusts the Toshiba heat pump target temperature based on time of day
+    and weekday/weekend schedules. Supports comfort, normal, and economy modes
+    with configurable time windows. Optionally integrates with a presence
+    detector to use economy temperature when nobody is home.
+    Requires the Toshiba AC custom integration (toshiba_ac).
+  domain: automation
+  input:
+    climate_entity:
+      name: Toshiba AC climate entity
+      description: "The Toshiba AC climate entity to control"
+      selector:
+        entity:
+          filter:
+            - domain: climate
+              integration: toshiba_ac
+    morning_start_weekday:
+      name: Morning comfort start (weekdays)
+      description: "When to switch to comfort temperature on weekdays"
+      default: "06:00:00"
+      selector:
+        time:
+    evening_eco_start_weekday:
+      name: Evening economy start (weekdays)
+      description: "When to switch to economy temperature on weekday evenings"
+      default: "22:00:00"
+      selector:
+        time:
+    morning_start_weekend:
+      name: Morning comfort start (weekends)
+      description: "When to switch to comfort temperature on weekends"
+      default: "08:00:00"
+      selector:
+        time:
+    evening_eco_start_weekend:
+      name: Evening economy start (weekends)
+      description: "When to switch to economy temperature on weekend evenings"
+      default: "23:00:00"
+      selector:
+        time:
+    daytime_eco_start:
+      name: Daytime economy start (weekdays)
+      description: "When to reduce temperature during weekday daytime (e.g., when at work). Set same as morning to disable."
+      default: "09:00:00"
+      selector:
+        time:
+    daytime_eco_end:
+      name: Daytime economy end (weekdays)
+      description: "When to resume comfort before arriving home"
+      default: "15:00:00"
+      selector:
+        time:
+    comfort_temp:
+      name: Comfort temperature
+      description: "Target temperature during comfort hours"
+      default: 22
+      selector:
+        number:
+          min: 17
+          max: 30
+          step: 1
+          unit_of_measurement: "°C"
+    normal_temp:
+      name: Normal temperature
+      description: "Target temperature during normal/daytime economy hours"
+      default: 20
+      selector:
+        number:
+          min: 17
+          max: 30
+          step: 1
+          unit_of_measurement: "°C"
+    economy_temp:
+      name: Economy temperature
+      description: "Target temperature during night/economy hours"
+      default: 18
+      selector:
+        number:
+          min: 17
+          max: 30
+          step: 1
+          unit_of_measurement: "°C"
+    away_temp:
+      name: Away temperature
+      description: "Target temperature when nobody is home (requires presence sensor)"
+      default: 17
+      selector:
+        number:
+          min: 17
+          max: 25
+          step: 1
+          unit_of_measurement: "°C"
+    presence_sensor:
+      name: Presence sensor (optional)
+      description: "A person or group entity to detect if anyone is home. Leave empty to disable."
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain:
+                - person
+                - group
+                - binary_sensor
+
+mode: restart
+
+trigger:
+  - platform: time_pattern
+    minutes: "/15"
+    id: time_check
+  - platform: state
+    entity_id: !input presence_sensor
+    id: presence_change
+
+variables:
+  presence: !input presence_sensor
+  is_home: >-
+    {% if presence is string and presence != '' %}
+      {{ states(presence) == 'home' or states(presence) == 'on' }}
+    {% else %}
+      true
+    {% endif %}
+  comfort: !input comfort_temp
+  normal: !input normal_temp
+  economy: !input economy_temp
+  away: !input away_temp
+  is_weekday: "{{ now().isoweekday() <= 5 }}"
+  morning_wd: !input morning_start_weekday
+  evening_wd: !input evening_eco_start_weekday
+  morning_we: !input morning_start_weekend
+  evening_we: !input evening_eco_start_weekend
+  day_eco_start: !input daytime_eco_start
+  day_eco_end: !input daytime_eco_end
+  current_time: "{{ now().strftime('%H:%M:%S') }}"
+  morning_start: "{{ morning_wd if is_weekday else morning_we }}"
+  evening_start: "{{ evening_wd if is_weekday else evening_we }}"
+  target_temp: >-
+    {% if not is_home %}
+      {{ away }}
+    {% elif current_time < morning_start or current_time >= evening_start %}
+      {{ economy }}
+    {% elif is_weekday and current_time >= day_eco_start and current_time < day_eco_end %}
+      {{ normal }}
+    {% else %}
+      {{ comfort }}
+    {% endif %}
+
+action:
+  - condition: template
+    value_template: >-
+      {{ state_attr(climate_entity, 'temperature') | float(0) != target_temp | float(0) }}
+  - service: climate.set_temperature
+    target:
+      entity_id: !input climate_entity
+    data:
+      temperature: "{{ target_temp | float }}"
