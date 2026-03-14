@@ -7,13 +7,13 @@ blueprint:
     low battery warnings so your sensors never die silently.
   domain: automation
   input:
-    notify_service:
-      name: Notification service
-      description: "Select the notify entity for your device (e.g., mobile app)"
+    notify_device:
+      name: Device to notify
+      description: "Select the mobile device to receive notifications"
       selector:
-        entity:
+        device:
           filter:
-            - domain: notify
+            - integration: mobile_app
     water_leak_sensor:
       name: Water leak sensor
       description: "The Tuya water leak binary sensor entity"
@@ -97,7 +97,7 @@ trigger:
     id: low_battery
 
 variables:
-  notify_target: !input notify_service
+  notify_target: !input notify_device
   location: !input sensor_location
   do_repeat: !input repeat_alert
   interval: !input repeat_interval
@@ -113,7 +113,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "🚨 Water Leak Detected!"
               message: >-
@@ -142,7 +142,7 @@ action:
                   state: "on"
                 - action: notify.send_message
                   target:
-                    entity_id: "{{ notify_target }}"
+                    device_id: "{{ notify_target }}"
                   data:
                     title: "🚨 Water Leak Still Active!"
                     message: >-
@@ -165,7 +165,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "✅ Water Leak Cleared"
               message: >-
@@ -180,7 +180,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "🪫 Water Detector Low Battery"
               message: >-

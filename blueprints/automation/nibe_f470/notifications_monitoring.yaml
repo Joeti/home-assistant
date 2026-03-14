@@ -6,13 +6,13 @@ blueprint:
     and fan mode changes. Supports any notification service (mobile app, email, etc.).
   domain: automation
   input:
-    notify_service:
-      name: Notification service
-      description: "Select the notify entity for your device (e.g., mobile app)"
+    notify_device:
+      name: Device to notify
+      description: "Select the mobile device to receive notifications"
       selector:
-        entity:
+        device:
           filter:
-            - domain: notify
+            - integration: mobile_app
     alarm_sensor:
       name: Alarm sensor (optional)
       description: "The myUplink alarm/status sensor entity"
@@ -181,7 +181,7 @@ trigger:
     id: periodic_check
 
 variables:
-  notify_target: !input notify_service
+  notify_target: !input notify_device
   supply_sensor: !input supply_temp_sensor
   return_sensor: !input return_temp_sensor
   outdoor_sensor: !input outdoor_temp_sensor
@@ -216,7 +216,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "⚠️ Nibe F470 Alarm"
               message: >-
@@ -236,7 +236,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - High Compressor Load"
               message: >-
@@ -253,7 +253,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - Compressor Stopped"
               message: >-
@@ -268,7 +268,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - High Power Usage"
               message: >-
@@ -285,7 +285,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - Fan Mode Changed"
               message: >-
@@ -304,7 +304,7 @@ action:
         sequence:
           - action: notify.send_message
             target:
-              entity_id: "{{ notify_target }}"
+              device_id: "{{ notify_target }}"
             data:
               title: "Nibe F470 - Temperature Difference Alert"
               message: >-
