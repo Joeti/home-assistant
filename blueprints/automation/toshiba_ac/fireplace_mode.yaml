@@ -96,6 +96,8 @@ variables:
   action: !input fireplace_action
   auto_off: !input auto_off_enabled
   duration_hours: !input auto_off_duration
+  restore_mode_helper: !input restore_mode_helper
+  restore_temp_helper: !input restore_temp_helper
   previous_mode: "{{ states(climate_entity) }}"
   previous_temp: "{{ state_attr(climate_entity, 'temperature') | float(22) }}"
 
@@ -117,6 +119,16 @@ action:
               entity_id: !input restore_temp_helper
             data:
               value: "{{ previous_temp }}"
+          # If the AC is off, turn it on first so we can set the mode
+          - if:
+              - condition: template
+                value_template: "{{ previous_mode == 'off' }}"
+            then:
+              - service: climate.turn_on
+                target:
+                  entity_id: !input climate_entity
+              - delay:
+                  seconds: 2
           # Apply fireplace action
           - service: climate.set_hvac_mode
             target:
@@ -140,13 +152,23 @@ action:
           - condition: trigger
             id: fireplace_off
         sequence:
-          - service: climate.set_hvac_mode
-            target:
-              entity_id: !input climate_entity
-            data:
-              hvac_mode: "{{ states(restore_mode_helper) }}"
-          - service: climate.set_temperature
-            target:
-              entity_id: !input climate_entity
-            data:
-              temperature: "{{ states(restore_temp_helper) | float(22) }}"
+          - if:
+              - condition: template
+                value_template: "{{ states(restore_mode_helper) == 'off' }}"
+            then:
+              # AC was off before fireplace mode — just turn it off
+              - service: climate.turn_off
+                target:
+                  entity_id: !input climate_entity
+            else:
+              # Restore previous HVAC mode and temperature
+              - service: climate.set_hvac_mode
+                target:
+                  entity_id: !input climate_entity
+                data:
+                  hvac_mode: "{{ states(restore_mode_helper) }}"
+              - service: climate.set_temperature
+                target:
+                  entity_id: !input climate_entity
+                data:
+                  temperature: "{{ states(restore_temp_helper) | float(22) }}"
